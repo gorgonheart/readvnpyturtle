@@ -6,6 +6,11 @@ from csv import DictReader
 from datetime import datetime
 from collections import OrderedDict, defaultdict
 
+#如果设备用中文名，需要在pymongo之前增加gb18030编码。gb18030包含gb2312，并增加了cjk字符集
+#import sys
+#reload(sys)
+#sys.setdefaultencoding('gb18030')
+
 import numpy as np
 import matplotlib.pyplot as plt
 from pymongo import MongoClient
@@ -14,6 +19,7 @@ from vnpy.trader.vtObject import VtBarData
 from vnpy.trader.vtConstant import DIRECTION_LONG, DIRECTION_SHORT
 
 from turtleStrategy import TurtlePortfolio
+
 
 
 DAILY_DB_NAME = 'VnTrader_Daily_Db'
@@ -76,10 +82,11 @@ class BacktestingEngine(object):
                 VARIABLE_COMMISSION_DICT[d['vtSymbol']] = float(d['variableCommission'])
                 FIXED_COMMISSION_DICT[d['vtSymbol']] = float(d['fixedCommission'])
                 SLIPPAGE_DICT[d['vtSymbol']] = float(d['slippage'])
+        #这一部分和TurtleStrategy关联，改通用策略时候需要改造
+        self.portfolio = TurtlePortfolio(self) #初始化TurtlePortfolio类，创建为portfolio对象
+        self.portfolio.init(portfolioValue, self.vtSymbolList, SIZE_DICT) #调用TurtlePortfolio的初始化函数，
 
-        self.portfolio = TurtlePortfolio(self)
-        self.portfolio.init(portfolioValue, self.vtSymbolList, SIZE_DICT)
-
+        #output就是一个print，没别的作用
         self.output(u'投资组合的合约代码%s' %(self.vtSymbolList))
         self.output(u'投资组合的初始价值%s' %(portfolioValue))
 
@@ -87,20 +94,28 @@ class BacktestingEngine(object):
     def loadData(self):
         """加载数据"""
         mc = MongoClient()
-        db = mc[DAILY_DB_NAME]
+        db = mc[DAILY_DB_NAME] #DAILY_DB_NAME是预设的mongodb库名
 
         for vtSymbol in self.vtSymbolList:
+            #建造datetime为key的字典，但是mongodb读取出来的这个，是一个值还是多个值？flt是字典的字典还是字典？
             flt = {'datetime':{'$gte':self.startDt,
                                '$lte':self.endDt}}
 
-            collection = db[vtSymbol]
+            collection = db[vtSymbol] #db[vtSymbol]指定了表？
+            #从表中，找到flt的内容，并按照datetime排序，形成列表？还是形成指针？应该是列表吧
             cursor = collection.find(flt).sort('datetime')
 
             for d in cursor:
+                #创建一个VtBarData类的对象
                 bar = VtBarData()
+                #把vtSymbol表中，时间点对应的那一行数据加入bar下面的dict，形成bar对象的基础数据
                 bar.__dict__ = d
 
+                #创建了一个新的orderedDict，也就是dict加了列表，但是这儿的bar.datetime是什么？
+                #self.dataDict也只是一个刚创建的orderedDict
+                #要看vntrader中的VtBarData干了什么
                 barDict = self.dataDict.setdefault(bar.datetime, OrderedDict())
+                #把每天的
                 barDict[bar.vtSymbol] = bar
 
             self.output(u'%s数据加载完成，总数据量：%s' %(vtSymbol, cursor.count()))
